@@ -1,0 +1,112 @@
+require 'time'
+# 1. Execute gradle tasks
+# 2. Build Android/IOS app
+# 3. Upload to Deploygate
+# 4. Log changes/ commit
+# 5. Log/save build version
+# 6. Send Chat-work notification
+
+before_all do |lane|
+    run_tests || error!("Tests failed")
+end
+
+after_all do |lane|
+end
+
+lane :dev do
+    android_build("development")
+    upload_android_to_deploygate("development")
+
+    ios_build("development")
+    upload_ios_to_deploygate("development")
+
+    notify_chatwork("DEV")
+    save_build_files("development")
+end
+
+lane :stg do
+    android_build("staging")
+    upload_android_to_deploygate("staging")
+
+    ios_build("staging")
+    upload_ios_to_deploygate("staging")
+
+    notify_chatwork("STG")
+    save_build_files("staging")
+end
+
+lane :prd do
+    android_build("production")
+    upload_android_to_deploygate("production")
+
+    ios_build("production")
+    upload_ios_to_deploygate("production")
+
+    notify_chatwork("PRD")
+    save_build_files("production")
+end
+
+
+def android_build(flavor)
+    sh "flutter build apk --flavor #{flavor} --release -t lib/main_#{flavor}.dart"
+end
+
+def ios_build(flavor)
+#   sh "flutter build ipa --flavor #{flavor} --release -t lib/main_#{flavor}.dart"
+  sh "flutter build ipa --release -t lib/main_#{flavor}.dart"
+end
+
+def upload_android_to_deploygate(flavor)
+end
+
+def upload_ios_to_deploygate(flavor)
+end
+
+#common
+def run_tests
+  sh "flutter analyze"
+  sh "flutter test ../test --coverage"
+  return $?.success?
+end
+
+def notify_chatwork(env)
+    recentCommits = sh "git log --oneline --no-merges --pretty=format:'%s' -5"
+    currentBranch = sh "git branch --show-current"
+    currentUser = sh "git config user.name"
+    chatwork(
+    message: "
+    IOS [#{env}]: https://dply.me/android#{env}
+    Android [#{env}]: https://dply.me/ios#{env}
+    ----------------------------------------\n
+    New changes:
+    #{recentCommits}
+    - Built branch: #{currentBranch}#{ENV['CI_COMMIT_BRANCH']}
+    - API URL: #{ENV['API_URL']}
+    - Author: #{currentUser}
+    - Revision: \##{lane_context[SharedValues::DEPLOYGATE_REVISION]}
+    [To:8043097][To:8301222]",
+    roomid: 329488107,
+    success: true,
+    api_token: "8fe6de7abcd1a9a7a6127eccc1c55c5f"
+    )
+end
+
+def save_build_files(flavor)
+  # Build the IPA and APK using Fastlane's build lanes or other tools
+
+  # Specify the directory where you want to save the files
+    current_date = Time.now.strftime("%H:%M-%m-%d")
+    save_directory = "../build_versions/#{flavor}"
+    FileUtils.mkdir_p(save_directory)
+
+#   Save the IPA file
+#   ipa_file = lane_context[SharedValues::IPA_OUTPUT_PATH]
+#   ipa_destination = File.join(save_directory, File.basename(ipa_file))
+#   FileUtils.cp(ipa_file, ipa_destination)
+
+  # Save the APK file
+    apk_source = "../build/app/outputs/flutter-apk/app-#{flavor}-release.apk"
+    apk_destination = File.join(save_directory, "#{current_date}.apk")
+
+    FileUtils.cp(apk_source, "#{apk_destination}")
+end
